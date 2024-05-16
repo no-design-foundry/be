@@ -68,7 +68,7 @@ def filter_preview(filter_identifier):
 
     ufo = Font()
     ufo.info.unitsPerEm = tt_font["head"].unitsPerEm
-    ufo.info.familyName = tt_font["name"].getBestFamilyName() + " Rotorized"
+    ufo.info.familyName = tt_font["name"].getBestFamilyName()
     ufo.info.styleName = tt_font["name"].getBestSubFamilyName()
     for glyph_name in glyph_names_to_process:
         new_glyph = ufo.newGlyph(glyph_name)
@@ -158,7 +158,7 @@ def filter_download(filter_identifier):
 
     ufo = Font()
     ufo.info.unitsPerEm = tt_font["head"].unitsPerEm
-    ufo.info.familyName = tt_font["name"].getBestFamilyName() + " Rotorized"
+    ufo.info.familyName = tt_font["name"].getBestFamilyName()
     ufo.info.styleName = tt_font["name"].getBestSubFamilyName()
 
     for glyph_name in glyph_names_to_process:
