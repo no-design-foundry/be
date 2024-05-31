@@ -121,13 +121,6 @@ def filter_preview(filter_identifier):
 ranges = [
     (32, 126),
 ]
-# ranges = [
-#     (32, 127),
-#     (128, 255),
-#     (256, 383),
-#     (384, 591),
-#     (7680, 7935),
-# ]
 
 def is_in_ranges(code_point):
     for start, end in ranges:
