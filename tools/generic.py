@@ -1,6 +1,5 @@
 import base64
 import defcon
-import re
 import uharfbuzz as hb
 
 from fontTools.pens.ttGlyphPen import TTGlyphPen
@@ -279,23 +278,16 @@ def inject_kerning(source: defcon.Font, output_font: TTFont) -> None:
     # pass
 
 
-def extractGlyfGlyph(source, glyph_name):
+def extractGlyfGlyph(source, glyph_name, output_pen):
     return source["glyf"][glyph_name]
 
-def extractCffGlyph(source, glyph_name):
+def extractCFFGlyph(source, glyph_name, output_pen):
     cff = source["CFF "]
     content = cff.cff[cff.cff.keys()[0]]
     glyph = content.CharStrings[glyph_name]
-    output_pen = TTGlyphPen([])
-    cu2quPen = Cu2QuPen(other_pen=output_pen, max_err=MAX_ERR)
-    glyph.draw(cu2quPen)
-    try:
-        cu2quPen.endPath()
-    except:
-        pass
-    return output_pen.glyph()
+    glyph.draw(output_pen)
 
-def extractCff2Glyph(source, glyph_name):
+def extractCFF2Glyph(source, glyph_name, output_pen):
     cff2 = source["CFF2"]
     content = cff2.cff[cff2.cff.keys()[0]]
     glyph = content.CharStrings[glyph_name]
@@ -303,7 +295,7 @@ def extractCff2Glyph(source, glyph_name):
     cu2quPen = Cu2QuPen(other_pen=output_pen, max_err=MAX_ERR)
     glyph.draw(cu2quPen)
     cu2quPen.endPath()
-    return output_pen.glyph()
+    output_pen.glyph().draw(output_pen)
 
 
 def createCmap(preview_string_glyph_names, cmap_reversed):
