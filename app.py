@@ -23,6 +23,7 @@ from tools.generic import (
     extractGlyfGlyph,
     extractCFF2Glyph,
     extractCFFGlyph,
+    extract_kerning_hb
 )
 
 load_dotenv()
@@ -131,7 +132,10 @@ def process_font(filter_identifier, request, process_for_download=False):
     elif filter_identifier == "extruder":
         angle = int(request.form.get("angle", 330))
         extractOpenTypeInfo(tt_font, ufo)
-        # outline = int(request.form.get("outline"))
+        widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
+        extracted_kerning = extract_kerning_hb(font_file, widths, content=preview_string, cmap=cmap)
+        for k,v in extracted_kerning.items():
+            ufo.kerning[k] = v
         output = [
             extrude_variable(
                 ufo=ufo,
