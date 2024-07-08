@@ -5,6 +5,7 @@ from io import BytesIO
 from pathlib import Path
 
 from defcon import Font
+from defcon.objects.base import BaseObject
 from dotenv import load_dotenv
 from extractor.formats.opentype import extractOpenTypeInfo
 from extruder.extruder import extrude_variable
@@ -25,6 +26,13 @@ from tools.generic import (
     rename_name_ttfont,
     rename_name_ufo,
 )
+
+BaseObject.addObserver = lambda *args, **kwargs: None
+BaseObject.postNotification = lambda *args, **kwargs: None
+BaseObject.removeObserver = lambda *args, **kwargs: None
+BaseObject.beginSelfNotificationObservation = lambda *args, **kwargs: None
+BaseObject.endSelfContourNotificationObservation = lambda *args, **kwargs: None
+
 
 load_dotenv()
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
@@ -111,8 +119,6 @@ def process_font(filter_identifier, request, process_for_download=False):
             else:
                 raise AssertionError("Unsupported font format")
 
-        print(filter_identifier, len(glyph), glyph_name)
-
     if filter_identifier == "rasterizer":
         resolution = int(request.form.get("resolution", 30))
         output = [
@@ -156,6 +162,7 @@ def process_font(filter_identifier, request, process_for_download=False):
             pan(
                 ufo,
                 glyph_names_to_process=glyph_names_to_process,
+                is_quadratic="glyf" in tt_font,
             )
         ]
 
@@ -172,7 +179,6 @@ def process_font(filter_identifier, request, process_for_download=False):
         response.append(base64.b64encode(font_file).decode("ascii"))
 
     collect()
-    output[0].save("output.ttf")
 
     if process_for_download:
         return jsonify({"fonts": response}), 200
