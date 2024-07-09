@@ -10,9 +10,9 @@ from itertools import chain
 from fontTools.ttLib import TTFont
 from ufo2ft import compileTTF, compileOTF
 from fontTools.pens.t2CharStringPen import T2CharStringPen
+from fontTools.pens.qu2cuPen import Qu2CuPen
 from fontTools.cffLib import PrivateDict
 from typing import Dict, Tuple
-
 from ufo2ft.featureWriters.kernFeatureWriter import KernFeatureWriter
 from ufo2ft.featureWriters.ast import FeatureFile
 from fontTools.feaLib.builder import Builder
@@ -242,11 +242,12 @@ def extract_kerning_hb(font_data:bytes, widths:Dict[Tuple[str, str], int], conte
     buf = hb.Buffer()
     buf.add_str(content)
     buf.guess_segment_properties()
-    hb.shape(font, buf, {"kern": True})
+    hb.shape(font, buf, {"kern": True, "liga": False})
     positions = buf.glyph_positions
     kerning = {}
     for i, pos in enumerate(positions[:-1]):
         x_advance = pos.x_advance
+        print(x_advance)
         key = (cmap.get(ord(content[i])), cmap.get(ord(content[i+1])))
         if None not in key:
             value = x_advance - widths[cmap[ord(content[i])]]
@@ -278,8 +279,10 @@ def inject_kerning(source: defcon.Font, output_font: TTFont) -> None:
     # pass
 
 
+
 def extractGlyfGlyph(source, glyph_name, output_pen):
-    return source["glyf"][glyph_name]
+    # source.getGlyphSet()[glyph_name].draw(output_pen)
+    source["glyf"][glyph_name].draw(output_pen, source["glyf"])
 
 def extractCFFGlyph(source, glyph_name, output_pen):
     cff = source["CFF "]

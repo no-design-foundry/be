@@ -13,7 +13,8 @@ from extruder.extruder import extrude_variable
 import base64
 from extractor import extractUFO
 from extractor.formats.opentype import extractOpenTypeInfo
-
+from tools.curveTools import curveConverter
+from fontTools.pens.basePen import BasePen
 from tools.generic import (
     fonts_to_base64,
     get_components_in_subsetted_text,
@@ -54,7 +55,7 @@ def is_in_ranges(code_point):
         if start <= code_point <= end:
             return True
     return False
-
+    
 
 def process_font(filter_identifier, request, process_for_download=False):
     if filter_identifier not in ["rasterizer", "rotorizer", "extruder"]:
@@ -76,12 +77,15 @@ def process_font(filter_identifier, request, process_for_download=False):
 
     glyph_names_to_process = []
     cmap = tt_font.getBestCmap()
-    cmap_reversed = {v: k for k, v in cmap.items()}
+    cmap_reversed = {}
+    for k, v in cmap.items():
+        cmap_reversed.setdefault(v, []).append(k)
 
     if process_for_download:
-        for glyph_name, unicode_value in cmap_reversed.items():
-            if is_in_ranges(unicode_value):
-                glyph_names_to_process.append(glyph_name)
+        for glyph_name, unicode_values in cmap_reversed.items():
+            for unicode_value in unicode_values:
+                if is_in_ranges(unicode_value):
+                    glyph_names_to_process.append(glyph_name)
     else:
         glyph_names_to_process = [
             cmap.get(ord(char), None) for char in set(preview_string)
@@ -95,12 +99,15 @@ def process_font(filter_identifier, request, process_for_download=False):
     if process_for_download:
         ufo.info.familyName = tt_font["name"].getBestFamilyName()
         ufo.info.styleName = tt_font["name"].getBestSubFamilyName()
+    else:
+        ufo.info.familyName = "Preview"
+        ufo.info.styleName = "Regular"
 
     for glyph_name in glyph_names_to_process:
         glyph = ufo.newGlyph(glyph_name)
-        glyph.unicode = cmap_reversed.get(glyph_name, None)
+        glyph.unicodes = cmap_reversed.get(glyph_name, None)
         pen = glyph.getPen()
-        if filter_identifier in ["extruder"]:
+        if filter_identifier in ["extruder", "rotorizer"]:
             glyph.width = tt_font["hmtx"].metrics[glyph_name][0]
             if "CFF " in tt_font:
                 extractCFFGlyph(tt_font, glyph_name, pen)
@@ -108,6 +115,8 @@ def process_font(filter_identifier, request, process_for_download=False):
                 extractCFF2Glyph(tt_font, glyph_name, pen)
             elif "glyf" in tt_font:
                 extractGlyfGlyph(tt_font, glyph_name, pen)
+    
+    # ufo.save("output.ufo")
 
     if filter_identifier == "rasterizer":
         resolution = int(request.form.get("resolution", 30))
@@ -125,22 +134,24 @@ def process_font(filter_identifier, request, process_for_download=False):
         output = rotorize(
             ufo=ufo,
             glyph_names_to_process=glyph_names_to_process,
-            cmap_reversed=cmap_reversed,
-            tt_font=tt_font,
             depth=depth,
         )
+
     elif filter_identifier == "extruder":
         angle = int(request.form.get("angle", 330))
-        extractOpenTypeInfo(tt_font, ufo)
-        widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
-        extracted_kerning = extract_kerning_hb(font_file, widths, content=preview_string, cmap=cmap)
-        for k,v in extracted_kerning.items():
-            ufo.kerning[k] = v
+        if not process_for_download:
+            extractOpenTypeInfo(tt_font, ufo)
+            widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
+            extracted_kerning = extract_kerning_hb(font_file, widths, content=preview_string, cmap=cmap)
+            for k,v in extracted_kerning.items():
+                ufo.kerning[k] = v
         output = [
             extrude_variable(
                 ufo=ufo,
                 glyph_names_to_process=glyph_names_to_process,
-                angle=angle
+                angle=angle,
+                depths=[int(i*tt_font["head"].unitsPerEm/1000) for i in [20, 400]],
+                is_quadratic="glyf" in tt_font,
             )
         ]
 
@@ -159,7 +170,6 @@ def process_font(filter_identifier, request, process_for_download=False):
 
     
     collect()
-    output[0].save("output.ttf")
 
     if process_for_download:
         return jsonify({"fonts": response}), 200
