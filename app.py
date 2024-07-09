@@ -1,12 +1,18 @@
+import base64
 import os
 from gc import collect
 from io import BytesIO
 from pathlib import Path
-from dotenv import load_dotenv
+
 from defcon import Font
+from defcon.objects.base import BaseObject
+from dotenv import load_dotenv
+from extractor.formats.opentype import extractOpenTypeInfo
+from extruder.extruder import extrude_variable
 from flask import Flask, abort, jsonify, request
 from flask_cors import CORS, cross_origin
 from fontTools.ttLib import TTFont
+from pan.pan import pan
 from rasterizer.rasterizer import rasterize
 from rotorizer.rotorizer import rotorize
 from extruder.extruder import extrude_variable
@@ -15,17 +21,24 @@ from extractor import extractUFO
 from extractor.formats.opentype import extractOpenTypeInfo
 from tools.curveTools import curveConverter
 from fontTools.pens.basePen import BasePen
+
 from tools.generic import (
-    fonts_to_base64,
-    get_components_in_subsetted_text,
-    get_margins,
-    rename_name_ttfont,
-    rename_name_ufo,
-    extractGlyfGlyph,
+    extract_kerning_hb,
     extractCFF2Glyph,
     extractCFFGlyph,
-    extract_kerning_hb
+    extractGlyfGlyph,
+    fonts_to_base64,
+    get_components_in_subsetted_text,
+    rename_name_ttfont,
+    rename_name_ufo,
 )
+
+BaseObject.addObserver = lambda *args, **kwargs: None
+BaseObject.postNotification = lambda *args, **kwargs: None
+BaseObject.removeObserver = lambda *args, **kwargs: None
+BaseObject.beginSelfNotificationObservation = lambda *args, **kwargs: None
+BaseObject.endSelfContourNotificationObservation = lambda *args, **kwargs: None
+
 
 load_dotenv()
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
@@ -43,6 +56,7 @@ suffix_name_map = {
     "rotorizer": ["Rotorized Underlay", "Rotorized Overlay"],
     "rasterizer": ["Rasterized"],
     "extruder": ["Extruded"],
+    "pan": ["Panned"],
 }
 
 ranges = [
@@ -58,7 +72,7 @@ def is_in_ranges(code_point):
     
 
 def process_font(filter_identifier, request, process_for_download=False):
-    if filter_identifier not in ["rasterizer", "rotorizer", "extruder"]:
+    if filter_identifier not in ["rasterizer", "rotorizer", "extruder", "pan"]:
         raise abort(404, description="Filter not found")
 
     if not request.files.get("font_file"):
@@ -70,10 +84,10 @@ def process_font(filter_identifier, request, process_for_download=False):
             raise AssertionError("Preview string is too long")
 
     font_file = request.files.get("font_file").read()
-    
 
     binary_font = BytesIO(font_file)
     tt_font = TTFont(binary_font)
+    units_per_em = tt_font["head"].unitsPerEm
 
     glyph_names_to_process = []
     cmap = tt_font.getBestCmap()
@@ -107,7 +121,8 @@ def process_font(filter_identifier, request, process_for_download=False):
         glyph = ufo.newGlyph(glyph_name)
         glyph.unicodes = cmap_reversed.get(glyph_name, None)
         pen = glyph.getPen()
-        if filter_identifier in ["extruder", "rotorizer"]:
+        if filter_identifier in ["extruder", "rotorizer", "pan"]:
+            pen = glyph.getPen()
             glyph.width = tt_font["hmtx"].metrics[glyph_name][0]
             if "CFF " in tt_font:
                 extractCFFGlyph(tt_font, glyph_name, pen)
@@ -115,8 +130,8 @@ def process_font(filter_identifier, request, process_for_download=False):
                 extractCFF2Glyph(tt_font, glyph_name, pen)
             elif "glyf" in tt_font:
                 extractGlyfGlyph(tt_font, glyph_name, pen)
-    
-    # ufo.save("output.ufo")
+            else:
+                raise AssertionError("Unsupported font format")
 
     if filter_identifier == "rasterizer":
         resolution = int(request.form.get("resolution", 30))
@@ -139,19 +154,36 @@ def process_font(filter_identifier, request, process_for_download=False):
 
     elif filter_identifier == "extruder":
         angle = int(request.form.get("angle", 330))
+        angle = 315
         if not process_for_download:
             extractOpenTypeInfo(tt_font, ufo)
             widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
             extracted_kerning = extract_kerning_hb(font_file, widths, content=preview_string, cmap=cmap)
             for k,v in extracted_kerning.items():
                 ufo.kerning[k] = v
+        extractOpenTypeInfo(tt_font, ufo)
+        widths = {
+            k: v[0]
+            for k, v in tt_font["hmtx"].metrics.items()
+            if k in glyph_names_to_process
+        }
+        extracted_kerning = extract_kerning_hb(
+            font_file, widths, content=preview_string, cmap=cmap
+        )
+        for k, v in extracted_kerning.items():
+            ufo.kerning[k] = v
         output = [
             extrude_variable(
-                ufo=ufo,
-                glyph_names_to_process=glyph_names_to_process,
-                angle=angle,
-                depths=[int(i*tt_font["head"].unitsPerEm/1000) for i in [20, 400]],
-                is_quadratic="glyf" in tt_font,
+                ufo=ufo, glyph_names_to_process=glyph_names_to_process, angle=angle
+            )
+        ]
+    elif filter_identifier == "pan":
+        output = [
+            pan(
+                ufo,
+                glyph_names_to_process,
+                units_per_em / 1000,
+                min_length=float(request.form.get("min_length", 2)),
             )
         ]
 
@@ -163,12 +195,12 @@ def process_font(filter_identifier, request, process_for_download=False):
             else:
                 rename_name_ttfont(font, suffix)
 
+    output[0].save(str(base / "output.ttf"))
 
     response = fonts_to_base64(output)
     if filter_identifier in ["extruder"]:
-        response.append(base64.b64encode(font_file).decode('ascii'))
+        response.append(base64.b64encode(font_file).decode("ascii"))
 
-    
     collect()
 
     if process_for_download:
@@ -188,7 +220,7 @@ def process_font(filter_identifier, request, process_for_download=False):
             {
                 "fonts": response,
                 "warnings": warnings,
-                #"margins": get_margins(tt_font),
+                # "margins": get_margins(tt_font),
                 "preview_string": "".join(
                     [char for char in preview_string if char not in missing_glyphs]
                 ),

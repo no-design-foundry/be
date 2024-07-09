@@ -1,10 +1,4 @@
 import base64
-import defcon
-import uharfbuzz as hb
-
-from fontTools.pens.ttGlyphPen import TTGlyphPen
-from fontTools.pens.cu2quPen import Cu2QuPen
-from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
 from io import BytesIO
 from itertools import chain
 from fontTools.ttLib import TTFont
@@ -17,15 +11,27 @@ from ufo2ft.featureWriters.kernFeatureWriter import KernFeatureWriter
 from ufo2ft.featureWriters.ast import FeatureFile
 from fontTools.feaLib.builder import Builder
 
+from typing import Dict, Tuple
+
+import defcon
+import uharfbuzz as hb
 from extractor.formats.opentype import (
     extractGlyphOrder,
+    extractOpenTypeGlyphs,
     extractOpenTypeInfo,
     extractOpenTypeKerning,
-    extractOpenTypeGlyphs,
-    extractUnicodeVariationSequences
+    extractUnicodeVariationSequences,
 )
+from fontTools.cffLib import PrivateDict
+from fontTools.feaLib.builder import Builder
+from fontTools.pens.t2CharStringPen import T2CharStringPen
+from fontTools.ttLib import TTFont
+from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
+from ufo2ft import compileOTF, compileTTF
+from ufo2ft.featureWriters.ast import FeatureFile
+from ufo2ft.featureWriters.kernFeatureWriter import KernFeatureWriter
 
-MAX_ERR = .2
+MAX_ERR = 0.2
 
 FAMILY_RELATED_IDS = dict(
     LEGACY_FAMILY=1,
@@ -39,6 +45,7 @@ FAMILY_RELATED_IDS = dict(
 WINDOWS_ENGLISH_IDS = 3, 1, 0x409
 MAC_ROMAN_IDS = 1, 0, 0
 
+
 def insert_suffix(string, family_name, suffix):
     # check whether family_name is a substring
     start = string.find(family_name)
@@ -50,6 +57,7 @@ def insert_suffix(string, family_name, suffix):
         # it's not, we just append the suffix at the end
         new_string = string + suffix
     return new_string
+
 
 def get_current_family_name(table):
     family_name_rec = None
@@ -71,6 +79,7 @@ def get_current_family_name(table):
     if not family_name_rec:
         raise ValueError("family name not found; can't add suffix")
     return family_name_rec.toUnicode()
+
 
 def rename_record(name_record, family_name, suffix):
     string = name_record.toUnicode()
@@ -105,6 +114,7 @@ def add_family_suffix(font, suffix):
 
     return family_name
 
+
 def rename_name_ttfont(font, suffix) -> None:
     try:
         add_family_suffix(font, f" {suffix}")
@@ -112,13 +122,14 @@ def rename_name_ttfont(font, suffix) -> None:
         print(e)
         pass
 
+
 def rename_name_ufo(font, suffix) -> None:
     old_name = font.info.familyName
-    new_name =  f"{old_name} {suffix}"
+    new_name = f"{old_name} {suffix}"
     try:
         font.info.openTypeNameRecords.clear()
     except Exception as e:
-        print("font info already cleared")
+        print("font info already cleared", e)
         pass
 
     font.info.familyName = new_name
@@ -127,18 +138,19 @@ def rename_name_ufo(font, suffix) -> None:
     font.info.openTypeNamePreferredFamilyName = new_name
     font.info.openTypeNameCompatibleFullName = new_name
 
-
     # font.info.openTypeNameWWSFamilyName = new_name
     # font.info.openTypeNameWWSSubfamilyName = new_name
 
     # else:
     #     pass
 
+
 def inject_features(source, destination):
     for table_name in ("GPOS", "GSUB", "GDEF"):
         if table_name in source:
             destination[table_name].table = source[table_name].table
     # go = [glyph_name for glyph_name in source.getGlyphOrder() if glyph_name in destination.getGlyphOrder()]
+
 
 def get_glyph(char_string):
     glyph = defcon.objects.glyph.Glyph()
@@ -147,12 +159,14 @@ def get_glyph(char_string):
     pen.endPath()
     return glyph
 
+
 def get_charstring(glyph):
     cff_pen = T2CharStringPen(None, [], CFF2=True)
     glyph.draw(cff_pen)
     cff_pen.endPath()
     private = PrivateDict()
     return cff_pen.getCharString(private=private)
+
 
 def export_font(font, flavour="ttf"):
     if isinstance(font, defcon.Font):
@@ -169,32 +183,45 @@ def export_font(font, flavour="ttf"):
     else:
         raise Exception("not good instance")
 
+
 def export_fonts(fonts, flavour="ttf"):
     fonts_ = []
     for font in fonts:
         fonts_.append(export_font(font))
     return fonts_
 
+
 def fonts_to_base64(fonts):
     fonts_ = export_fonts(fonts)
-    return [base64.b64encode(font.getvalue()).decode('ascii') for font in fonts_]
+    return [base64.b64encode(font.getvalue()).decode("ascii") for font in fonts_]
+
 
 def get_components_in_subsetted_text(tt_font, glyph_names):
     if "glyf" in tt_font:
+
         def get_component_names(glyf, glyph_names, collector=[]):
-            components = list(chain(*[glyf[glyph_name].getComponentNames(glyf) for glyph_name in glyph_names]))
+            components = list(
+                chain(
+                    *[
+                        glyf[glyph_name].getComponentNames(glyf)
+                        for glyph_name in glyph_names
+                    ]
+                )
+            )
             if components:
                 collector += components
                 return get_component_names(glyf, components, collector)
             else:
                 return collector
+
         glyf = tt_font["glyf"]
-        components = []
-        cmap = tt_font.getBestCmap()
-        keep_glyphs = filter(lambda glyph_name:False if glyph_name is None else True, glyph_names)
+        keep_glyphs = filter(
+            lambda glyph_name: False if glyph_name is None else True, glyph_names
+        )
         return get_component_names(glyf, list(keep_glyphs))
     else:
         return ()
+
 
 def get_widths(tt_font, glyph_names):
     widths = {}
@@ -202,40 +229,47 @@ def get_widths(tt_font, glyph_names):
         widths[glyph_name] = tt_font["hmtx"][glyph_name][0]
     return widths
 
+
 def extractFontFromOpenType(
     tt_font,
     destination,
     extract_glyphs=True,
-):  
+):
     extractGlyphOrder(tt_font, destination)
     try:
         extractOpenTypeInfo(tt_font, destination)
-    except:
+    except Exception as e:
+        print(e)
         pass
     if extract_glyphs:
         extractOpenTypeGlyphs(tt_font, destination)
     else:
         for glyph_name in destination.glyphOrder:
-            destination.newGlyph(glyph_name)        
+            destination.newGlyph(glyph_name)
     extractUnicodeVariationSequences(tt_font, destination)
     kerning, groups = extractOpenTypeKerning(tt_font, destination)
     destination.groups.update(groups)
     destination.kerning.update(kerning)
 
+
 def extract_to_ufo(tt_font: TTFont, extract_glyphs=True) -> defcon.Font:
     ufo = defcon.Font()
     extractFontFromOpenType(tt_font, ufo, extract_glyphs=extract_glyphs)
-    cmap_reversed = {v:k for k,v in tt_font.getBestCmap().items()}
+    cmap_reversed = {v: k for k, v in tt_font.getBestCmap().items()}
     if not extract_glyphs:
         for glyph_name in tt_font.getGlyphOrder():
             new_glyph = ufo.newGlyph(glyph_name)
             new_glyph.unicode = cmap_reversed.get(glyph_name, None)
     return ufo
 
+
 def zip_list(font_list):
     pass
 
-def extract_kerning_hb(font_data:bytes, widths:Dict[Tuple[str, str], int], content: str, cmap: dict) -> Dict[Tuple[str, str], int]:
+
+def extract_kerning_hb(
+    font_data: bytes, widths: Dict[Tuple[str, str], int], content: str, cmap: dict
+) -> Dict[Tuple[str, str], int]:
     blob = hb.Blob(font_data)
     face = hb.Face(blob)
     font = hb.Font(face)
@@ -247,28 +281,29 @@ def extract_kerning_hb(font_data:bytes, widths:Dict[Tuple[str, str], int], conte
     kerning = {}
     for i, pos in enumerate(positions[:-1]):
         x_advance = pos.x_advance
-        print(x_advance)
-        key = (cmap.get(ord(content[i])), cmap.get(ord(content[i+1])))
+        key = (cmap.get(ord(content[i])), cmap.get(ord(content[i + 1])))
         if None not in key:
             value = x_advance - widths[cmap[ord(content[i])]]
             if value != 0:
                 if key not in kerning:
-                    kerning[key] = value 
+                    kerning[key] = value
     return kerning
+
 
 def extract_kerning_kern(tt_font, preview_string, cmap):
     kerning = tt_font["kern"].kernTables[0]
     output = {}
     for i, character in enumerate(preview_string[:-1]):
         left = cmap[ord(character)]
-        right = cmap[ord(preview_string[i+1])]
+        right = cmap[ord(preview_string[i + 1])]
         try:
             output[(left, right)] = kerning[(left, right)]
-        except:
-            print("extracting kerning exception")
+        except Exception as e:  # noqa
+            print("extracting kerning exception", e)
             pass
     return output
     # return {}
+
 
 def inject_kerning(source: defcon.Font, output_font: TTFont) -> None:
     kerning_writer = KernFeatureWriter(ignoreMarks=True)
@@ -290,15 +325,12 @@ def extractCFFGlyph(source, glyph_name, output_pen):
     glyph = content.CharStrings[glyph_name]
     glyph.draw(output_pen)
 
+
 def extractCFF2Glyph(source, glyph_name, output_pen):
     cff2 = source["CFF2"]
     content = cff2.cff[cff2.cff.keys()[0]]
     glyph = content.CharStrings[glyph_name]
-    output_pen = TTGlyphPen([])
-    cu2quPen = Cu2QuPen(other_pen=output_pen, max_err=MAX_ERR)
-    glyph.draw(cu2quPen)
-    cu2quPen.endPath()
-    output_pen.glyph().draw(output_pen)
+    glyph.draw(output_pen)
 
 
 def createCmap(preview_string_glyph_names, cmap_reversed):
@@ -307,9 +339,14 @@ def createCmap(preview_string_glyph_names, cmap_reversed):
     subtable.platformID = 0
     subtable.platEncID = 3
     subtable.language = 0
-    subtable.cmap = {cmap_reversed[glyph_name]:glyph_name for glyph_name in preview_string_glyph_names if glyph_name in cmap_reversed}
+    subtable.cmap = {
+        cmap_reversed[glyph_name]: glyph_name
+        for glyph_name in preview_string_glyph_names
+        if glyph_name in cmap_reversed
+    }
     outtables.append(subtable)
     return outtables
+
 
 def get_margins(tt_font):
     os_2 = tt_font["OS/2"]
@@ -321,35 +358,23 @@ def get_margins(tt_font):
     usWinDescent = os_2.usWinDescent
     sTypoLineGap = os_2.sTypoLineGap
     margin_bottom = -usWinDescent / usWinAscent
+    print(margin_bottom)
     margin_top = sCapHeight / usWinAscent - 1 if sTypoLineGap else 0
     # return {"marginBottom": round(margin_bottom, 3), "marginTop": round(margin_top, 3)}
     return {"marginBottom": 0, "marginTop": round(margin_top, 3)}
 
-def extractTTFontGlyphs(source, output, glyph_names_to_process):
-    is_ttf = False
-    is_cff = False
-    is_cff2 = False
-    if "glyf" in source:
-        is_ttf = True
-    elif "CFF " in source:
-        is_cff = True
-    elif "CFF2" in source:
-        is_cff2 = True
-    for glyph_name in glyph_names_to_process:
-        if is_ttf:
-            glyph = extractGlyfGlyph(source, glyph_name)
-        elif is_cff2:
-            glyph = extractCff2Glyph(source, glyph_name)
-        elif is_cff:
-            glyph = extractCffGlyph(source, glyph_name)
-        output["glyf"][glyph_name] = glyph
-        output["hmtx"][glyph_name] = source["hmtx"][glyph_name]
-
 
 if __name__ == "__main__":
     from pathlib import Path
+
     base = Path(__file__).parent
     from fontTools.ttLib import TTFont
-    font = TTFont(base.parent.parent / "be_test" / "fonts" / "Futura LT Condensed Extra Bold Oblique.ttf")
+
+    font = TTFont(
+        base.parent.parent
+        / "be_test"
+        / "fonts"
+        / "Futura LT Condensed Extra Bold Oblique.ttf"
+    )
     rename_name_ttfont(font, "Rotated")
     font.save("test.ttf")
