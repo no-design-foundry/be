@@ -11,6 +11,7 @@ Flask==3.0.3
 Flask-Cors==4.0.1
 fontFeatures==1.8.0
 fontMath==0.9.3
+fontPens==0.2.4
 fonttools==4.51.0
 freetype-py==2.4.0
 fs==2.4.16
@@ -31,6 +32,7 @@ git+https://github.com/no-design-foundry/filters-pan.git
 scipy==1.13.0
 setuptools==69.5.1
 six==1.16.0
+skia-pathops==0.8.0.post1
 tzdata==2024.1
 ufo-extractor==0.6.0
 ufo2ft==3.2.1

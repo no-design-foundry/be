@@ -1,18 +1,14 @@
 import base64
-import os
 from gc import collect
 from io import BytesIO
 from pathlib import Path
 
 from defcon import Font
 from defcon.objects.base import BaseObject
-from dotenv import load_dotenv
-from extractor.formats.opentype import extractOpenTypeInfo
 from flask import Flask, abort, jsonify, request
 from flask_cors import CORS, cross_origin
 from fontTools.ttLib import TTFont
 import base64
-from extractor.formats.opentype import extractOpenTypeInfo
 
 from pan.pan import pan
 from rasterizer.rasterizer import rasterize
@@ -20,7 +16,6 @@ from rasterizer.rasterizer import rasterize
 from rotorizer.rotorizer import rotorize
 
 from tools.generic import (
-    extract_kerning_hb,
     extractCFF2Glyph,
     extractCFFGlyph,
     extractGlyfGlyph,
@@ -36,10 +31,6 @@ BaseObject.removeObserver = lambda *args, **kwargs: None
 BaseObject.beginSelfNotificationObservation = lambda *args, **kwargs: None
 BaseObject.endSelfContourNotificationObservation = lambda *args, **kwargs: None
 
-
-load_dotenv()
-DEBUG = os.getenv("DEBUG", "false").lower() == "true"
-print(f"DEBUG: {DEBUG}")
 
 base = Path(__file__).parent
 
@@ -243,4 +234,4 @@ def filter_download(filter_identifier):
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, debug=DEBUG)
+    app.run(host="127.0.0.1", port=8000, debug=True)
