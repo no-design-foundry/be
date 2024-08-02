@@ -154,7 +154,6 @@ def process_font(filter_identifier, request, process_for_download=False):
 
     elif filter_identifier == "extruder":
         angle = int(request.form.get("angle", 330))
-        angle = 315
         if not process_for_download:
             extractOpenTypeInfo(tt_font, ufo)
             widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
@@ -183,7 +182,7 @@ def process_font(filter_identifier, request, process_for_download=False):
                 ufo,
                 glyph_names_to_process,
                 units_per_em / 1000,
-                min_length=float(request.form.get("min_length", 2)),
+                shadow=request.form.get("shadow", False),
             )
         ]
 
@@ -194,8 +193,6 @@ def process_font(filter_identifier, request, process_for_download=False):
                 rename_name_ufo(font, suffix)
             else:
                 rename_name_ttfont(font, suffix)
-
-    output[0].save(str(base / "output.ttf"))
 
     response = fonts_to_base64(output)
     if filter_identifier in ["extruder"]:

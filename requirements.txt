@@ -27,6 +27,7 @@ python-dateutil==2.9.0.post0
 pytz==2024.1
 git+https://github.com/no-design-foundry/filters-rasterizer.git
 git+https://github.com/no-design-foundry/filters-rotorizer.git
+git+https://github.com/no-design-foundry/filters-pan.git
 scipy==1.13.0
 setuptools==69.5.1
 six==1.16.0
