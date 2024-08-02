@@ -33,4 +33,7 @@ Welcome to the source code repository for the backend of [nodesignfoundry.com](h
       gunicorn app:app --bind=127.0.0.1:8000   
       ```
 
+1. **Running tests**
+  - run `pytest` in this folder
+
 1. Have fun 😇
