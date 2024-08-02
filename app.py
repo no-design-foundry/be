@@ -8,19 +8,16 @@ from defcon import Font
 from defcon.objects.base import BaseObject
 from dotenv import load_dotenv
 from extractor.formats.opentype import extractOpenTypeInfo
-from extruder.extruder import extrude_variable
 from flask import Flask, abort, jsonify, request
 from flask_cors import CORS, cross_origin
 from fontTools.ttLib import TTFont
+import base64
+from extractor.formats.opentype import extractOpenTypeInfo
+
 from pan.pan import pan
 from rasterizer.rasterizer import rasterize
+# from extruder.extruder import extrude_variable
 from rotorizer.rotorizer import rotorize
-from extruder.extruder import extrude_variable
-import base64
-from extractor import extractUFO
-from extractor.formats.opentype import extractOpenTypeInfo
-from tools.curveTools import curveConverter
-from fontTools.pens.basePen import BasePen
 
 from tools.generic import (
     extract_kerning_hb,
@@ -55,7 +52,7 @@ origins = ["http://localhost:3000", "*"]
 suffix_name_map = {
     "rotorizer": ["Rotorized Underlay", "Rotorized Overlay"],
     "rasterizer": ["Rasterized"],
-    "extruder": ["Extruded"],
+    # "extruder": ["Extruded"],
     "pan": ["Panned"],
 }
 
@@ -72,7 +69,11 @@ def is_in_ranges(code_point):
     
 
 def process_font(filter_identifier, request, process_for_download=False):
-    if filter_identifier not in ["rasterizer", "rotorizer", "extruder", "pan"]:
+    if filter_identifier not in [
+        "rasterizer",
+        "rotorizer",
+        # "extruder",
+        "pan"]:
         raise abort(404, description="Filter not found")
 
     if not request.files.get("font_file"):
@@ -152,30 +153,30 @@ def process_font(filter_identifier, request, process_for_download=False):
             depth=depth,
         )
 
-    elif filter_identifier == "extruder":
-        angle = int(request.form.get("angle", 330))
-        if not process_for_download:
-            extractOpenTypeInfo(tt_font, ufo)
-            widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
-            extracted_kerning = extract_kerning_hb(font_file, widths, content=preview_string, cmap=cmap)
-            for k,v in extracted_kerning.items():
-                ufo.kerning[k] = v
-        extractOpenTypeInfo(tt_font, ufo)
-        widths = {
-            k: v[0]
-            for k, v in tt_font["hmtx"].metrics.items()
-            if k in glyph_names_to_process
-        }
-        extracted_kerning = extract_kerning_hb(
-            font_file, widths, content=preview_string, cmap=cmap
-        )
-        for k, v in extracted_kerning.items():
-            ufo.kerning[k] = v
-        output = [
-            extrude_variable(
-                ufo=ufo, glyph_names_to_process=glyph_names_to_process, angle=angle
-            )
-        ]
+    # elif filter_identifier == "extruder":
+    #     angle = int(request.form.get("angle", 330))
+    #     if not process_for_download:
+    #         extractOpenTypeInfo(tt_font, ufo)
+    #         widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
+    #         extracted_kerning = extract_kerning_hb(font_file, widths, content=preview_string, cmap=cmap)
+    #         for k,v in extracted_kerning.items():
+    #             ufo.kerning[k] = v
+    #     extractOpenTypeInfo(tt_font, ufo)
+    #     widths = {
+    #         k: v[0]
+    #         for k, v in tt_font["hmtx"].metrics.items()
+    #         if k in glyph_names_to_process
+    #     }
+    #     extracted_kerning = extract_kerning_hb(
+    #         font_file, widths, content=preview_string, cmap=cmap
+    #     )
+    #     for k, v in extracted_kerning.items():
+    #         ufo.kerning[k] = v
+    #     output = [
+    #         extrude_variable(
+    #             ufo=ufo, glyph_names_to_process=glyph_names_to_process, angle=angle
+    #         )
+    #     ]
     elif filter_identifier == "pan":
         output = [
             pan(
