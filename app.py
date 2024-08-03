@@ -12,10 +12,12 @@ import base64
 
 from pan.pan import pan
 from rasterizer.rasterizer import rasterize
-# from extruder.extruder import extrude_variable
+from extruder.extruder import extrude_variable
 from rotorizer.rotorizer import rotorize
 
 from tools.generic import (
+    extractOpenTypeInfo,
+    extract_kerning_hb,
     extractCFF2Glyph,
     extractCFFGlyph,
     extractGlyfGlyph,
@@ -43,7 +45,7 @@ origins = ["http://localhost:3000", "*"]
 suffix_name_map = {
     "rotorizer": ["Rotorized Underlay", "Rotorized Overlay"],
     "rasterizer": ["Rasterized"],
-    # "extruder": ["Extruded"],
+    "extruder": ["Extruded"],
     "pan": ["Panned"],
 }
 
@@ -63,7 +65,7 @@ def process_font(filter_identifier, request, process_for_download=False):
     if filter_identifier not in [
         "rasterizer",
         "rotorizer",
-        # "extruder",
+        "extruder",
         "pan"]:
         raise abort(404, description="Filter not found")
 
@@ -144,30 +146,33 @@ def process_font(filter_identifier, request, process_for_download=False):
             depth=depth,
         )
 
-    # elif filter_identifier == "extruder":
-    #     angle = int(request.form.get("angle", 330))
-    #     if not process_for_download:
-    #         extractOpenTypeInfo(tt_font, ufo)
-    #         widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
-    #         extracted_kerning = extract_kerning_hb(font_file, widths, content=preview_string, cmap=cmap)
-    #         for k,v in extracted_kerning.items():
-    #             ufo.kerning[k] = v
-    #     extractOpenTypeInfo(tt_font, ufo)
-    #     widths = {
-    #         k: v[0]
-    #         for k, v in tt_font["hmtx"].metrics.items()
-    #         if k in glyph_names_to_process
-    #     }
-    #     extracted_kerning = extract_kerning_hb(
-    #         font_file, widths, content=preview_string, cmap=cmap
-    #     )
-    #     for k, v in extracted_kerning.items():
-    #         ufo.kerning[k] = v
-    #     output = [
-    #         extrude_variable(
-    #             ufo=ufo, glyph_names_to_process=glyph_names_to_process, angle=angle
-    #         )
-    #     ]
+    elif filter_identifier == "extruder":
+        angle = int(request.form.get("angle", 330))
+        if not process_for_download:
+            extractOpenTypeInfo(tt_font, ufo)
+            widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
+            extracted_kerning = extract_kerning_hb(font_file, widths, content=preview_string, cmap=cmap)
+            for k,v in extracted_kerning.items():
+                ufo.kerning[k] = v
+        extractOpenTypeInfo(tt_font, ufo)
+        widths = {
+            k: v[0]
+            for k, v in tt_font["hmtx"].metrics.items()
+            if k in glyph_names_to_process
+        }
+        extracted_kerning = extract_kerning_hb(
+            font_file, widths, content=preview_string, cmap=cmap
+        )
+        for k, v in extracted_kerning.items():
+            ufo.kerning[k] = v
+        output = [
+            extrude_variable(
+                ufo=ufo,
+                glyph_names_to_process=glyph_names_to_process,
+                angle=angle,
+                depths=[20, 400]
+            )
+        ]
     elif filter_identifier == "pan":
         output = [
             pan(
