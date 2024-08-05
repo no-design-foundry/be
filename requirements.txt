@@ -20,7 +20,7 @@ itsdangerous==2.2.0
 Jinja2==3.1.4
 lxml==5.2.1
 MarkupSafe==2.1.5
-numpy==1.26.4
+numpy==2.0.1
 packaging==24.0
 pyclipper==1.3.0.post5
 pycparser==2.22
@@ -30,7 +30,7 @@ git+https://github.com/no-design-foundry/filters-rasterizer.git
 git+https://github.com/no-design-foundry/filters-rotorizer.git
 git+https://github.com/no-design-foundry/filters-pan.git
 scipy==1.13.0
-setuptools==69.5.1
+setuptools==72.1.0
 six==1.16.0
 skia-pathops==0.8.0.post1
 tzdata==2024.1

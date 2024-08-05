@@ -12,7 +12,7 @@ import base64
 
 from pan.pan import pan
 from rasterizer.rasterizer import rasterize
-from extruder.extruder import extrude_variable
+# from extruder.extruder import extrude_variable
 from rotorizer.rotorizer import rotorize
 
 from tools.generic import (
@@ -32,6 +32,8 @@ BaseObject.postNotification = lambda *args, **kwargs: None
 BaseObject.removeObserver = lambda *args, **kwargs: None
 BaseObject.beginSelfNotificationObservation = lambda *args, **kwargs: None
 BaseObject.endSelfContourNotificationObservation = lambda *args, **kwargs: None
+BaseObject.dirty = lambda : None
+BaseObject.dispatcher = None
 
 
 base = Path(__file__).parent
@@ -45,7 +47,7 @@ origins = ["http://localhost:3000", "*"]
 suffix_name_map = {
     "rotorizer": ["Rotorized Underlay", "Rotorized Overlay"],
     "rasterizer": ["Rasterized"],
-    "extruder": ["Extruded"],
+    # "extruder": ["Extruded"],
     "pan": ["Panned"],
 }
 
@@ -65,7 +67,7 @@ def process_font(filter_identifier, request, process_for_download=False):
     if filter_identifier not in [
         "rasterizer",
         "rotorizer",
-        "extruder",
+        # "extruder",
         "pan"]:
         raise abort(404, description="Filter not found")
 
@@ -115,7 +117,7 @@ def process_font(filter_identifier, request, process_for_download=False):
         glyph = ufo.newGlyph(glyph_name)
         glyph.unicodes = cmap_reversed.get(glyph_name, None)
         pen = glyph.getPen()
-        if filter_identifier in ["extruder", "rotorizer", "pan"]:
+        if filter_identifier in ["extruder", "rasterizer", "rotorizer", "pan"]:
             pen = glyph.getPen()
             glyph.width = tt_font["hmtx"].metrics[glyph_name][0]
             if "CFF " in tt_font:
@@ -132,10 +134,10 @@ def process_font(filter_identifier, request, process_for_download=False):
         output = [
             rasterize(
                 ufo=ufo,
-                tt_font=tt_font,
                 binary_font=binary_font,
                 glyph_names_to_process=glyph_names_to_process,
                 resolution=resolution,
+                tt_font=tt_font,
             )
         ]
     elif filter_identifier == "rotorizer":
@@ -170,16 +172,20 @@ def process_font(filter_identifier, request, process_for_download=False):
                 ufo=ufo,
                 glyph_names_to_process=glyph_names_to_process,
                 angle=angle,
+                is_quadratic="glyf" in tt_font,
                 depths=[20, 400]
             )
         ]
     elif filter_identifier == "pan":
+        step = int(request.form.get("step", 40))
+        assert 100 > step > 0, "Step must be between 0 and 100"
         output = [
             pan(
                 ufo,
                 glyph_names_to_process,
                 units_per_em / 1000,
-                shadow=request.form.get("shadow", False),
+                step * (units_per_em / 1000),
+                request.form.get("shadow", False),
             )
         ]
 
