@@ -3,8 +3,8 @@ from gc import collect
 from io import BytesIO
 from pathlib import Path
 
-from defcon import Font
-from defcon.objects.base import BaseObject
+# from defcon import Font
+# from defcon.objects.base import BaseObject
 from flask import Flask, abort, jsonify, request
 from flask_cors import CORS, cross_origin
 from fontTools.ttLib import TTFont
@@ -27,13 +27,15 @@ from tools.generic import (
     rename_name_ufo,
 )
 
-BaseObject.addObserver = lambda *args, **kwargs: None
-BaseObject.postNotification = lambda *args, **kwargs: None
-BaseObject.removeObserver = lambda *args, **kwargs: None
-BaseObject.beginSelfNotificationObservation = lambda *args, **kwargs: None
-BaseObject.endSelfContourNotificationObservation = lambda *args, **kwargs: None
-BaseObject.dirty = lambda : None
-BaseObject.dispatcher = None
+# BaseObject.addObserver = lambda *args, **kwargs: None
+# BaseObject.postNotification = lambda *args, **kwargs: None
+# BaseObject.removeObserver = lambda *args, **kwargs: None
+# BaseObject.beginSelfNotificationObservation = lambda *args, **kwargs: None
+# BaseObject.endSelfContourNotificationObservation = lambda *args, **kwargs: None
+# BaseObject.dirty = lambda : None
+# BaseObject.dispatcher = None
+
+from ufoLib2.objects.font import Font
 
 
 base = Path(__file__).parent
@@ -113,6 +115,7 @@ def process_font(filter_identifier, request, process_for_download=False):
         ufo.info.familyName = "Preview"
         ufo.info.styleName = "Regular"
 
+    extractOpenTypeInfo(tt_font, ufo)
     for glyph_name in glyph_names_to_process:
         glyph = ufo.newGlyph(glyph_name)
         glyph.unicodes = cmap_reversed.get(glyph_name, None)
@@ -141,51 +144,51 @@ def process_font(filter_identifier, request, process_for_download=False):
             )
         ]
     elif filter_identifier == "rotorizer":
-        depth = int(request.form.get("depth", 200))
         output = rotorize(
             ufo=ufo,
             glyph_names_to_process=glyph_names_to_process,
-            depth=depth,
+            is_cff="glyf" not in tt_font,
         )
 
-    elif filter_identifier == "extruder":
-        angle = int(request.form.get("angle", 330))
-        if not process_for_download:
-            extractOpenTypeInfo(tt_font, ufo)
-            widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
-            extracted_kerning = extract_kerning_hb(font_file, widths, content=preview_string, cmap=cmap)
-            for k,v in extracted_kerning.items():
-                ufo.kerning[k] = v
-        extractOpenTypeInfo(tt_font, ufo)
-        widths = {
-            k: v[0]
-            for k, v in tt_font["hmtx"].metrics.items()
-            if k in glyph_names_to_process
-        }
-        extracted_kerning = extract_kerning_hb(
-            font_file, widths, content=preview_string, cmap=cmap
-        )
-        for k, v in extracted_kerning.items():
-            ufo.kerning[k] = v
-        output = [
-            extrude_variable(
-                ufo=ufo,
-                glyph_names_to_process=glyph_names_to_process,
-                angle=angle,
-                is_quadratic="glyf" in tt_font,
-                depths=[20, 400]
-            )
-        ]
+    # elif filter_identifier == "extruder":
+    #     angle = int(request.form.get("angle", 330))
+    #     if not process_for_download:
+    #         extractOpenTypeInfo(tt_font, ufo)
+    #         widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
+    #         extracted_kerning = extract_kerning_hb(font_file, widths, content=preview_string, cmap=cmap)
+    #         for k,v in extracted_kerning.items():
+    #             ufo.kerning[k] = v
+    #     extractOpenTypeInfo(tt_font, ufo)
+    #     widths = {
+    #         k: v[0]
+    #         for k, v in tt_font["hmtx"].metrics.items()
+    #         if k in glyph_names_to_process
+    #     }
+    #     extracted_kerning = extract_kerning_hb(
+    #         font_file, widths, content=preview_string, cmap=cmap
+    #     )
+    #     for k, v in extracted_kerning.items():
+    #         ufo.kerning[k] = v
+    #     output = [
+    #         extrude_variable(
+    #             ufo=ufo,
+    #             glyph_names_to_process=glyph_names_to_process,
+    #             angle=angle,
+    #             is_quadratic="glyf" in tt_font,
+    #             depths=[20, 400]
+    #         )
+    #     ]
+
     elif filter_identifier == "pan":
         step = int(request.form.get("step", 40))
-        assert 100 > step > 0, "Step must be between 0 and 100"
+        assert 60 >= step >= 30, "Step must be between 30 and 60"
         output = [
             pan(
                 ufo,
-                glyph_names_to_process,
-                units_per_em / 1000,
-                step * (units_per_em / 1000),
-                request.form.get("shadow", False),
+                step * units_per_em / 1000,
+                glyph_names_to_process=glyph_names_to_process,
+                shadow = request.form.get("shadow", False),
+                scale_factor = units_per_em / 1000,
             )
         ]
 

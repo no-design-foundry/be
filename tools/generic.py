@@ -30,6 +30,7 @@ from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
 from ufo2ft import compileOTF, compileTTF
 from ufo2ft.featureWriters.ast import FeatureFile
 from ufo2ft.featureWriters.kernFeatureWriter import KernFeatureWriter
+from ufoLib2.objects.font import Font as Lib2Font
 
 MAX_ERR = 0.2
 
@@ -169,7 +170,7 @@ def get_charstring(glyph):
 
 
 def export_font(font, flavour="ttf"):
-    if isinstance(font, defcon.Font):
+    if isinstance(font, defcon.Font) or isinstance(font, Lib2Font):
         if flavour == "ttf":
             font = compileTTF(font, removeOverlaps=False, flattenComponents=False)
         elif flavour == "otf":
