@@ -86,6 +86,7 @@ def process_font(filter_identifier, request, process_for_download=False):
     binary_font = BytesIO(font_file)
     tt_font = TTFont(binary_font)
     units_per_em = tt_font["head"].unitsPerEm
+    glyph_order = tt_font.getGlyphOrder()
 
     glyph_names_to_process = []
     cmap = tt_font.getBestCmap()
@@ -102,12 +103,19 @@ def process_font(filter_identifier, request, process_for_download=False):
         glyph_names_to_process = [
             cmap.get(ord(char), None) for char in set(preview_string)
         ]
-
+    
     components = get_components_in_subsetted_text(tt_font, glyph_names_to_process)
     glyph_names_to_process.extend(components)
 
+    glyph_names_to_process = [g for g in glyph_names_to_process if g in glyph_order]
+
     ufo = Font()
     ufo.info.unitsPerEm = tt_font["head"].unitsPerEm
+    ufo.info.ascender = tt_font["hhea"].ascent
+    ufo.info.descender = tt_font["hhea"].descent
+    ufo.info.capHeight = tt_font["OS/2"].sCapHeight
+    ufo.info.xHeight = tt_font["OS/2"].sxHeight
+    
     if process_for_download:
         ufo.info.familyName = tt_font["name"].getBestFamilyName()
         ufo.info.styleName = tt_font["name"].getBestSubFamilyName()
