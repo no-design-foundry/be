@@ -113,8 +113,11 @@ def process_font(filter_identifier, request, process_for_download=False):
     ufo.info.unitsPerEm = tt_font["head"].unitsPerEm
     ufo.info.ascender = tt_font["hhea"].ascent
     ufo.info.descender = tt_font["hhea"].descent
-    ufo.info.capHeight = tt_font["OS/2"].sCapHeight
-    ufo.info.xHeight = tt_font["OS/2"].sxHeight
+    try:
+        ufo.info.capHeight = tt_font["OS/2"].sCapHeight
+        ufo.info.xHeight = tt_font["OS/2"].sxHeight
+    except:
+        pass
     
     if process_for_download:
         ufo.info.familyName = tt_font["name"].getBestFamilyName()
