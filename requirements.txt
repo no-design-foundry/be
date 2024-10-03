@@ -8,7 +8,7 @@ cffsubr==0.3.0
 click==8.1.7
 defcon==0.10.3
 Flask==3.0.3
-Flask-Cors==4.0.1
+Flask-Cors==4.0.2
 fontFeatures==1.8.0
 fontMath==0.9.3
 fontPens==0.2.4
