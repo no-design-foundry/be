@@ -2,261 +2,188 @@ import base64
 from gc import collect
 from io import BytesIO
 from pathlib import Path
-
-# from defcon import Font
-# from defcon.objects.base import BaseObject
 from flask import Flask, abort, jsonify, request
 from flask_cors import CORS, cross_origin
 from fontTools.ttLib import TTFont
-import base64
-
 from pan.pan import pan
 from rasterizer.rasterizer import rasterize
-# from extruder.extruder import extrude_variable
 from rotorizer.rotorizer import rotorize
-
 from tools.generic import (
-    extractOpenTypeInfo,
-    extract_kerning_hb,
-    extractCFF2Glyph,
-    extractCFFGlyph,
-    extractGlyfGlyph,
-    fonts_to_base64,
-    get_components_in_subsetted_text,
-    rename_name_ttfont,
-    rename_name_ufo,
+	extractOpenTypeInfo,
+	extract_kerning_hb,
+	extractCFF2Glyph,
+	extractCFFGlyph,
+	extractGlyfGlyph,
+	fonts_to_base64,
+	get_components_in_subsetted_text,
+	rename_name_ttfont,
+	rename_name_ufo,
 )
-
-# BaseObject.addObserver = lambda *args, **kwargs: None
-# BaseObject.postNotification = lambda *args, **kwargs: None
-# BaseObject.removeObserver = lambda *args, **kwargs: None
-# BaseObject.beginSelfNotificationObservation = lambda *args, **kwargs: None
-# BaseObject.endSelfContourNotificationObservation = lambda *args, **kwargs: None
-# BaseObject.dirty = lambda : None
-# BaseObject.dispatcher = None
-
 from ufoLib2.objects.font import Font
-
 
 base = Path(__file__).parent
 
+# Define the Flask app
 app = Flask(__name__)
-cors = CORS(app)
+CORS(app)
 app.config["CORS_HEADERS"] = "Content-Type"
 
-origins = ["http://localhost:3000", "*"]
+class FontProcessor:
+	suffix_name_map = {
+		"rotorizer": ["Rotorized Underlay", "Rotorized Overlay"],
+		"rasterizer": ["Rasterized"],
+		"pan": ["Panned"],
+	}
 
-suffix_name_map = {
-    "rotorizer": ["Rotorized Underlay", "Rotorized Overlay"],
-    "rasterizer": ["Rasterized"],
-    # "extruder": ["Extruded"],
-    "pan": ["Panned"],
-}
+	ranges = [
+		(32, 126),
+	]
 
-ranges = [
-    (32, 126),
-]
+	def __init__(self, filter_identifier, request, process_for_download=False):
+		self.filter_identifier = filter_identifier
+		self.request = request
+		self.process_for_download = process_for_download
+		self.validate_filter()
 
+	def validate_filter(self):
+		"""Check if filter is valid"""
+		if self.filter_identifier not in ["rasterizer", "rotorizer", "pan"]:
+			abort(404, description="Filter not found")
 
-def is_in_ranges(code_point):
-    for start, end in ranges:
-        if start <= code_point <= end:
-            return True
-    return False
-    
+	def is_in_ranges(self, code_point):
+		"""Check if code point is in defined ranges"""
+		for start, end in self.ranges:
+			if start <= code_point <= end:
+				return True
+		return False
 
-def process_font(filter_identifier, request, process_for_download=False):
-    if filter_identifier not in [
-        "rasterizer",
-        "rotorizer",
-        # "extruder",
-        "pan"]:
-        raise abort(404, description="Filter not found")
+	def load_font(self):
+		"""Load and process the font file"""
+		if not self.request.files.get("font_file"):
+			raise AssertionError("Font file is required")
 
-    if not request.files.get("font_file"):
-        raise AssertionError("Font file is required")
+		preview_string = self.request.form.get("preview_string")
+		if preview_string and len(preview_string) > 30:
+			raise AssertionError("Preview string is too long")
 
-    preview_string = request.form.get("preview_string")
-    if preview_string:
-        if len(preview_string) > 30:
-            raise AssertionError("Preview string is too long")
+		self.font_file = self.request.files.get("font_file").read()
+		self.binary_font = BytesIO(self.font_file)
+		self.tt_font = TTFont(self.binary_font)
+		self.units_per_em = self.tt_font["head"].unitsPerEm
+		self.glyph_order = self.tt_font.getGlyphOrder()
+		self.cmap = self.tt_font.getBestCmap()
+		if not self.cmap:
+			self.cmap = self.tt_font.getBestCmap(cmapPreferences=((1, 0), (3, 0)))
+		self.cmap_reversed = {}
+		for k, v in self.cmap.items():
+			self.cmap_reversed.setdefault(v, []).append(k)
 
-    font_file = request.files.get("font_file").read()
+		self.glyph_names_to_process = self.get_glyph_names_to_process(preview_string)
 
-    binary_font = BytesIO(font_file)
-    tt_font = TTFont(binary_font)
-    units_per_em = tt_font["head"].unitsPerEm
-    glyph_order = tt_font.getGlyphOrder()
+	def get_glyph_names_to_process(self, preview_string):
+		"""Get glyph names for processing"""
+		glyph_names = []
+		if self.process_for_download:
+			for glyph_name, unicode_values in self.cmap_reversed.items():
+				if all(self.is_in_ranges(u) for u in unicode_values):
+					glyph_names.append(glyph_name)
+		else:
+			glyph_names = [
+				self.cmap.get(ord(char), None) for char in set(preview_string)
+			]
+		components = get_components_in_subsetted_text(self.tt_font, glyph_names)
+		return [g for g in glyph_names + components if g in self.glyph_order]
 
-    glyph_names_to_process = []
-    cmap = tt_font.getBestCmap()
-    cmap_reversed = {}
-    for k, v in cmap.items():
-        cmap_reversed.setdefault(v, []).append(k)
+	def create_ufo(self):
+		"""Create UFO object and extract OpenType info"""
+		self.ufo = Font()
+		self.ufo.info.unitsPerEm = self.tt_font["head"].unitsPerEm
+		self.ufo.info.ascender = self.tt_font["hhea"].ascent
+		self.ufo.info.descender = self.tt_font["hhea"].descent
+		self.ufo.info.familyName = "Preview" if not self.process_for_download else self.tt_font["name"].getBestFamilyName()
+		self.ufo.info.styleName = "Regular" if not self.process_for_download else self.tt_font["name"].getBestSubFamilyName()
 
-    if process_for_download:
-        for glyph_name, unicode_values in cmap_reversed.items():
-            for unicode_value in unicode_values:
-                if is_in_ranges(unicode_value):
-                    glyph_names_to_process.append(glyph_name)
-    else:
-        glyph_names_to_process = [
-            cmap.get(ord(char), None) for char in set(preview_string)
-        ]
-    
-    components = get_components_in_subsetted_text(tt_font, glyph_names_to_process)
-    glyph_names_to_process.extend(components)
+		try:
+			self.ufo.info.capHeight = self.tt_font["OS/2"].sCapHeight
+			self.ufo.info.xHeight = self.tt_font["OS/2"].sxHeight
+		except:
+			pass
+		
+		try:
+			extractOpenTypeInfo(self.tt_font, self.ufo)
+		except AttributeError:
+			pass
 
-    glyph_names_to_process = [g for g in glyph_names_to_process if g in glyph_order]
+	def extract_glyphs(self):
+		"""Extract glyph data for the UFO"""
+		glyph_set = self.tt_font.getGlyphSet()
+		for glyph_name in set(self.glyph_names_to_process):
+			if glyph_name not in self.ufo:
+				glyph = self.ufo.newGlyph(glyph_name)
+				glyph.unicodes = self.cmap_reversed.get(glyph_name, None)
+				pen = glyph.getPen()
+				glyph_set_glyph = glyph_set[glyph_name]
+				glyph_set_glyph.draw(pen)
+				glyph.width = glyph_set_glyph.width
 
-    ufo = Font()
-    ufo.info.unitsPerEm = tt_font["head"].unitsPerEm
-    ufo.info.ascender = tt_font["hhea"].ascent
-    ufo.info.descender = tt_font["hhea"].descent
-    try:
-        ufo.info.capHeight = tt_font["OS/2"].sCapHeight
-        ufo.info.xHeight = tt_font["OS/2"].sxHeight
-    except:
-        pass
-    
-    if process_for_download:
-        ufo.info.familyName = tt_font["name"].getBestFamilyName()
-        ufo.info.styleName = tt_font["name"].getBestSubFamilyName()
-    else:
-        ufo.info.familyName = "Preview"
-        ufo.info.styleName = "Regular"
+	def apply_filter(self):
+		"""Apply the selected filter"""
+		if self.filter_identifier == "rasterizer":
+			resolution = int(self.request.form.get("resolution", 30))
+			return [rasterize(self.ufo, self.binary_font, self.glyph_names_to_process, resolution, self.tt_font)]
+		elif self.filter_identifier == "rotorizer":
+			return rotorize(self.ufo, self.glyph_names_to_process, is_cff="glyf" not in self.tt_font)
+		elif self.filter_identifier == "pan":
+			step = int(self.request.form.get("step", 40))
+			assert 60 >= step >= 30, "Step must be between 30 and 60"
+			return [pan(self.ufo, step * self.units_per_em / 1000, glyph_names_to_process=self.glyph_names_to_process, shadow=self.request.form.get("shadow", False), scale_factor=self.units_per_em / 1000)]
+		else:
+			raise AssertionError("Unsupported filter")
 
-    extractOpenTypeInfo(tt_font, ufo)
-    for glyph_name in glyph_names_to_process:
-        glyph = ufo.newGlyph(glyph_name)
-        glyph.unicodes = cmap_reversed.get(glyph_name, None)
-        pen = glyph.getPen()
-        if filter_identifier in ["extruder", "rasterizer", "rotorizer", "pan"]:
-            pen = glyph.getPen()
-            glyph.width = tt_font["hmtx"].metrics[glyph_name][0]
-            if "CFF " in tt_font:
-                extractCFFGlyph(tt_font, glyph_name, pen)
-            elif "CFF2" in tt_font:
-                extractCFF2Glyph(tt_font, glyph_name, pen)
-            elif "glyf" in tt_font:
-                extractGlyfGlyph(tt_font, glyph_name, pen)
-            else:
-                raise AssertionError("Unsupported font format")
+	def process(self):
+		"""Main process logic"""
+		self.load_font()
+		self.create_ufo()
+		self.extract_glyphs()
+		output = self.apply_filter()
 
-    if filter_identifier == "rasterizer":
-        resolution = int(request.form.get("resolution", 30))
-        output = [
-            rasterize(
-                ufo=ufo,
-                binary_font=binary_font,
-                glyph_names_to_process=glyph_names_to_process,
-                resolution=resolution,
-                tt_font=tt_font,
-            )
-        ]
-    elif filter_identifier == "rotorizer":
-        output = rotorize(
-            ufo=ufo,
-            glyph_names_to_process=glyph_names_to_process,
-            is_cff="glyf" not in tt_font,
-        )
+		for f, font in enumerate(output):
+			suffix = self.suffix_name_map[self.filter_identifier][f]
+			if isinstance(font, Font):
+				rename_name_ufo(font, suffix)
+			else:
+				rename_name_ttfont(font, suffix)
 
-    # elif filter_identifier == "extruder":
-    #     angle = int(request.form.get("angle", 330))
-    #     if not process_for_download:
-    #         extractOpenTypeInfo(tt_font, ufo)
-    #         widths = {k:v[0] for k,v in tt_font["hmtx"].metrics.items() if k in glyph_names_to_process}
-    #         extracted_kerning = extract_kerning_hb(font_file, widths, content=preview_string, cmap=cmap)
-    #         for k,v in extracted_kerning.items():
-    #             ufo.kerning[k] = v
-    #     extractOpenTypeInfo(tt_font, ufo)
-    #     widths = {
-    #         k: v[0]
-    #         for k, v in tt_font["hmtx"].metrics.items()
-    #         if k in glyph_names_to_process
-    #     }
-    #     extracted_kerning = extract_kerning_hb(
-    #         font_file, widths, content=preview_string, cmap=cmap
-    #     )
-    #     for k, v in extracted_kerning.items():
-    #         ufo.kerning[k] = v
-    #     output = [
-    #         extrude_variable(
-    #             ufo=ufo,
-    #             glyph_names_to_process=glyph_names_to_process,
-    #             angle=angle,
-    #             is_quadratic="glyf" in tt_font,
-    #             depths=[20, 400]
-    #         )
-    #     ]
+		response = fonts_to_base64(output)
+		if self.process_for_download:
+			return jsonify({"fonts": response}), 200
+		else:
+			warnings, preview_string = self.check_missing_glyphs()
+			return jsonify({"fonts": response, "warnings": warnings, "preview_string": preview_string}), 200
 
-    elif filter_identifier == "pan":
-        step = int(request.form.get("step", 40))
-        assert 60 >= step >= 30, "Step must be between 30 and 60"
-        output = [
-            pan(
-                ufo,
-                step * units_per_em / 1000,
-                glyph_names_to_process=glyph_names_to_process,
-                shadow = request.form.get("shadow", False),
-                scale_factor = units_per_em / 1000,
-            )
-        ]
-
-    for f, font in enumerate(output):
-        suffix = suffix_name_map[filter_identifier][f]
-        if suffix:
-            if isinstance(font, Font):
-                rename_name_ufo(font, suffix)
-            else:
-                rename_name_ttfont(font, suffix)
-
-    response = fonts_to_base64(output)
-    if filter_identifier in ["extruder"]:
-        response.append(base64.b64encode(font_file).decode("ascii"))
-
-    collect()
-
-    if process_for_download:
-        return jsonify({"fonts": response}), 200
-    else:
-        warnings = []
-        missing_glyphs = [
-            character
-            for character in preview_string
-            if cmap.get(ord(character), None) is None
-        ]
-        if missing_glyphs:
-            warnings.append(
-                f'Your font is missing these characters: {", ".join(missing_glyphs)}'
-            )
-        return jsonify(
-            {
-                "fonts": response,
-                "warnings": warnings,
-                # "margins": get_margins(tt_font),
-                "preview_string": "".join(
-                    [char for char in preview_string if char not in missing_glyphs]
-                ),
-            }
-        ), 200
+	def check_missing_glyphs(self):
+		"""Check for missing glyphs"""
+		preview_string = self.request.form.get("preview_string", "")
+		missing_glyphs = [char for char in preview_string if self.cmap.get(ord(char), None) is None]
+		warnings = []
+		if missing_glyphs:
+			warnings.append(f'Your font is missing these characters: {", ".join(missing_glyphs)}')
+		return warnings, "".join([char for char in preview_string if char not in missing_glyphs])
 
 
 @app.route("/filters/<filter_identifier>", methods=["POST"])
 @cross_origin()
 def filter_preview(filter_identifier):
-    return_value = process_font(filter_identifier, request, process_for_download=False)
-    collect()
-    return return_value
+	processor = FontProcessor(filter_identifier, request, process_for_download=False)
+	return processor.process()
 
 
 @app.route("/filters/<filter_identifier>/get", methods=["POST"])
 @cross_origin()
 def filter_download(filter_identifier):
-    return_value = process_font(filter_identifier, request, process_for_download=True)
-    collect()
-    return return_value
+	processor = FontProcessor(filter_identifier, request, process_for_download=True)
+	return processor.process()
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, debug=True)
+	app.run(host="127.0.0.1", port=8000, debug=True)
