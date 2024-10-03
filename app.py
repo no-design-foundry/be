@@ -11,9 +11,6 @@ from rotorizer.rotorizer import rotorize
 from tools.generic import (
 	extractOpenTypeInfo,
 	extract_kerning_hb,
-	extractCFF2Glyph,
-	extractCFFGlyph,
-	extractGlyfGlyph,
 	fonts_to_base64,
 	get_components_in_subsetted_text,
 	rename_name_ttfont,
@@ -108,6 +105,20 @@ class FontProcessor:
 			self.ufo.info.xHeight = self.tt_font["OS/2"].sxHeight
 		except:
 			pass
+
+		
+		if self.process_for_download:
+			pass
+		else:
+			widths = {
+				k: v[0]
+				for k, v in self.tt_font["hmtx"].metrics.items()
+				if k in self.glyph_names_to_process
+			}
+			extracted_kerning = extract_kerning_hb(
+				self.font_file, widths, content=self.request.form.get("preview_string"), cmap=self.cmap
+			)
+			self.ufo.kerning.update(extracted_kerning)
 		
 		try:
 			extractOpenTypeInfo(self.tt_font, self.ufo)
