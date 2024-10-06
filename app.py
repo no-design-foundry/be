@@ -1,5 +1,6 @@
-import base64
-from gc import collect
+import traceback
+
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from flask import Flask, abort, jsonify, request
@@ -8,6 +9,7 @@ from fontTools.ttLib import TTFont
 from pan.pan import pan
 from rasterizer.rasterizer import rasterize
 from rotorizer.rotorizer import rotorize
+from x_ray.x_ray import x_ray
 from tools.generic import (
 	extractOpenTypeInfo,
 	extract_kerning_hb,
@@ -17,6 +19,7 @@ from tools.generic import (
 	rename_name_ufo,
 )
 from ufoLib2.objects.font import Font
+
 
 base = Path(__file__).parent
 
@@ -30,6 +33,7 @@ class FontProcessor:
 		"rotorizer": ["Rotorized Underlay", "Rotorized Overlay"],
 		"rasterizer": ["Rasterized"],
 		"pan": ["Panned"],
+		"x_ray": ["X-Ray"],
 	}
 
 	ranges = [
@@ -40,12 +44,23 @@ class FontProcessor:
 		self.filter_identifier = filter_identifier
 		self.request = request
 		self.process_for_download = process_for_download
-		self.validate_filter()
+		self.validate()
 
-	def validate_filter(self):
+	def validate(self):
 		"""Check if filter is valid"""
-		if self.filter_identifier not in ["rasterizer", "rotorizer", "pan"]:
+		if self.filter_identifier not in ["rasterizer", "rotorizer", "pan", "x_ray"]:
 			abort(404, description="Filter not found")
+		
+		if not self.request.files.get("font_file"):
+			raise AssertionError("Font file is required")
+		
+		preview_string = self.request.form.get("preview_string")
+		if preview_string:
+			if len(preview_string) > 30:
+				raise AssertionError("Preview string is too long")
+		else:
+			raise AssertionError("Preview string is required")
+
 
 	def is_in_ranges(self, code_point):
 		"""Check if code point is in defined ranges"""
@@ -56,13 +71,6 @@ class FontProcessor:
 
 	def load_font(self):
 		"""Load and process the font file"""
-		if not self.request.files.get("font_file"):
-			raise AssertionError("Font file is required")
-
-		preview_string = self.request.form.get("preview_string")
-		if preview_string and len(preview_string) > 30:
-			raise AssertionError("Preview string is too long")
-
 		self.font_file = self.request.files.get("font_file").read()
 		self.binary_font = BytesIO(self.font_file)
 		self.tt_font = TTFont(self.binary_font)
@@ -75,6 +83,7 @@ class FontProcessor:
 		for k, v in self.cmap.items():
 			self.cmap_reversed.setdefault(v, []).append(k)
 
+		preview_string = self.request.form.get("preview_string")
 		self.glyph_names_to_process = self.get_glyph_names_to_process(preview_string)
 
 	def get_glyph_names_to_process(self, preview_string):
@@ -131,7 +140,7 @@ class FontProcessor:
 		for glyph_name in set(self.glyph_names_to_process):
 			if glyph_name not in self.ufo:
 				glyph = self.ufo.newGlyph(glyph_name)
-				glyph.unicodes = self.cmap_reversed.get(glyph_name, None)
+				glyph.unicodes = self.cmap_reversed.get(glyph_name, [])
 				pen = glyph.getPen()
 				glyph_set_glyph = glyph_set[glyph_name]
 				glyph_set_glyph.draw(pen)
@@ -148,6 +157,11 @@ class FontProcessor:
 			step = int(self.request.form.get("step", 40))
 			assert 60 >= step >= 30, "Step must be between 30 and 60"
 			return [pan(self.ufo, step * self.units_per_em / 1000, glyph_names_to_process=self.glyph_names_to_process, shadow=self.request.form.get("shadow", False), scale_factor=self.units_per_em / 1000)]
+		elif self.filter_identifier == "x_ray":
+			outline_color = self.request.form.get("outline_color", "#000000")
+			line_color = self.request.form.get("line_color", "#000000")
+			point_color = self.request.form.get("point_color", "#000000")
+			return [x_ray(self.ufo, outline_color=outline_color, line_color=line_color, point_color=point_color)]
 		else:
 			raise AssertionError("Unsupported filter")
 
@@ -185,8 +199,15 @@ class FontProcessor:
 @app.route("/filters/<filter_identifier>", methods=["POST"])
 @cross_origin()
 def filter_preview(filter_identifier):
-	processor = FontProcessor(filter_identifier, request, process_for_download=False)
-	return processor.process()
+	try:
+		start = datetime.now()
+		processor = FontProcessor(filter_identifier, request, process_for_download=False)
+		return_value = processor.process()
+		print((datetime.now() - start).total_seconds())
+		return return_value
+	except Exception as e:
+		print(traceback.format_exc())
+		return jsonify({"warnings": [f"{e.__class__.__name__}: {e}"]}), 400
 
 
 @app.route("/filters/<filter_identifier>/get", methods=["POST"])
