@@ -124,10 +124,13 @@ class FontProcessor:
 				for k, v in self.tt_font["hmtx"].metrics.items()
 				if k in self.glyph_names_to_process
 			}
-			extracted_kerning = extract_kerning_hb(
-				self.font_file, widths, content=self.request.form.get("preview_string"), cmap=self.cmap
-			)
-			self.ufo.kerning.update(extracted_kerning)
+			try:
+				extracted_kerning = extract_kerning_hb(
+					self.font_file, widths, content=self.request.form.get("preview_string"), cmap=self.cmap
+				)
+				self.ufo.kerning.update(extracted_kerning)
+			except Exception as e:
+				print(f"Kerning extraction failed: {e}")
 		
 		try:
 			extractOpenTypeInfo(self.tt_font, self.ufo)
@@ -200,10 +203,8 @@ class FontProcessor:
 @cross_origin()
 def filter_preview(filter_identifier):
 	try:
-		start = datetime.now()
 		processor = FontProcessor(filter_identifier, request, process_for_download=False)
 		return_value = processor.process()
-		print((datetime.now() - start).total_seconds())
 		return return_value
 	except Exception as e:
 		print(traceback.format_exc())
