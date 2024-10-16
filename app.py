@@ -98,7 +98,8 @@ class FontProcessor:
 				self.cmap.get(ord(char), None) for char in set(preview_string)
 			]
 		components = get_components_in_subsetted_text(self.tt_font, glyph_names)
-		return [g for g in glyph_names + components if g in self.glyph_order]
+		return_value = [g for g in glyph_names + components if g in self.glyph_order]
+		return set(glyph_names + return_value)
 
 	def create_ufo(self):
 		"""Create UFO object and extract OpenType info"""
