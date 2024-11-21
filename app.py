@@ -97,6 +97,7 @@ class FontProcessor:
 			glyph_names = [
 				self.cmap.get(ord(char), None) for char in set(preview_string)
 			]
+		glyph_names = [g for g in glyph_names if g is not None]
 		components = get_components_in_subsetted_text(self.tt_font, glyph_names)
 		return_value = [g for g in glyph_names + components if g in self.glyph_order]
 		return set(glyph_names + return_value)
@@ -114,7 +115,9 @@ class FontProcessor:
 			self.ufo.info.capHeight = self.tt_font["OS/2"].sCapHeight
 			self.ufo.info.xHeight = self.tt_font["OS/2"].sxHeight
 		except:
-			pass
+			# special fonts like webdings don't have cap height or x height
+			self.ufo.info.capHeight = self.tt_font["hhea"].ascent
+			self.ufo.info.xHeight = self.tt_font["hhea"].ascent
 
 		
 		if self.process_for_download:
@@ -141,8 +144,9 @@ class FontProcessor:
 	def extract_glyphs(self):
 		"""Extract glyph data for the UFO"""
 		glyph_set = self.tt_font.getGlyphSet()
+		print(glyph_set)
 		for glyph_name in set(self.glyph_names_to_process):
-			if glyph_name not in self.ufo:
+			if glyph_name in glyph_set and glyph_name not in self.ufo:
 				glyph = self.ufo.newGlyph(glyph_name)
 				glyph.unicodes = self.cmap_reversed.get(glyph_name, [])
 				pen = glyph.getPen()
