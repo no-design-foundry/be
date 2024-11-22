@@ -144,7 +144,6 @@ class FontProcessor:
 	def extract_glyphs(self):
 		"""Extract glyph data for the UFO"""
 		glyph_set = self.tt_font.getGlyphSet()
-		print(glyph_set)
 		for glyph_name in set(self.glyph_names_to_process):
 			if glyph_name in glyph_set and glyph_name not in self.ufo:
 				glyph = self.ufo.newGlyph(glyph_name)

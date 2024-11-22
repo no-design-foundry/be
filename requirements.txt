@@ -34,7 +34,7 @@ setuptools==72.1.0
 six==1.16.0
 skia-pathops==0.8.0.post1
 tzdata==2024.1
-ufo-extractor==0.6.0
+ufo-extractor==0.8.1
 ufo2ft==3.2.1
 ufoLib2==0.16.0
 uharfbuzz==0.39.1
